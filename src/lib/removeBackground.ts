@@ -22,15 +22,13 @@ async function processLocally(
   imageBlob: Blob,
   onProgress: (pct: number, stage: string) => void
 ): Promise<Blob> {
-  // MUST be an absolute URL — the library does new URL("resources.json", publicPath)
-  // which throws "Invalid base URL" if publicPath is relative or undefined
-  const publicPath = `${window.location.origin}/models/`;
-
   const { removeBackground } = await import('@imgly/background-removal');
 
+  // Use the library's built-in CDN (staticimgly.com) which is version-matched
+  // and has the correct resources.json format. Local @imgly/background-removal-data
+  // v1.4.5 is incompatible with library v1.7.0 (different key format in resources.json).
   const config: Config = {
-    publicPath,
-    model: 'isnet_quint8',
+    model: 'medium',
     output: { format: 'image/png', quality: 1 },
     progress: (key: string, current: number, total: number) => {
       const frac = total > 0 ? current / total : 0;
