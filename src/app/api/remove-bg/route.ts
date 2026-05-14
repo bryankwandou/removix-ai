@@ -21,9 +21,10 @@ async function callHuggingFace(imageBuffer: Buffer): Promise<Buffer> {
 
   let res = await doFetch();
 
-  // 503 = model loading — retry after 8 s
-  if (res.status === 503) {
-    await new Promise(r => setTimeout(r, 8000));
+  // 503 = model loading — retry up to 3 times with increasing delay
+  for (let attempt = 0; attempt < 3 && res.status === 503; attempt++) {
+    const delay = (attempt + 1) * 8000;
+    await new Promise(r => setTimeout(r, delay));
     res = await doFetch();
   }
 
@@ -34,7 +35,9 @@ async function callHuggingFace(imageBuffer: Buffer): Promise<Buffer> {
   }
 
   if (!res.ok) {
-    const text = await res.text();
+    const text = await res.text().catch(() => '');
+    if (res.status === 503) throw new Error('AI service is warming up. Please wait a moment and try again.');
+    if (res.status === 429) throw new Error('Too many requests. Please wait a few seconds and try again.');
     throw new Error(`HuggingFace error ${res.status}: ${text.slice(0, 200)}`);
   }
 

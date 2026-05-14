@@ -16,10 +16,18 @@ function mapError(err: unknown): string {
     return 'AI model failed to initialize. Try a different browser (Chrome recommended).';
   if (lower.includes('timeout') || lower.includes('timed out') || lower.includes('524'))
     return 'Processing timed out. Try a smaller image or try again later.';
-  if (lower.includes('fetch') || lower.includes('network') || lower.includes('failed to fetch'))
-    return 'Network error loading AI model. Check your connection and try again.';
+  if (lower.includes('503') || lower.includes('service unavailable') || lower.includes('model is currently loading'))
+    return 'AI service is warming up. Please wait a moment and try again.';
+  if (lower.includes('429') || lower.includes('rate limit') || lower.includes('too many requests'))
+    return 'Too many requests. Please wait a few seconds and try again.';
+  if (lower.includes('resource') && lower.includes('not found'))
+    return 'AI model failed to load. Refresh the page and try again.';
+  if (lower.includes('session') || lower.includes('inference'))
+    return 'AI model failed to initialize. Try a different browser (Chrome recommended).';
+  if (lower.includes('fetch') || lower.includes('network') || lower.includes('failed to fetch') || lower.includes('networkerror'))
+    return 'Network error. Check your connection and try again.';
   console.error('[Removix] Unhandled error:', msg);
-  return 'Processing failed. Try a different image or try again.';
+  return 'Processing failed. Please try again.';
 }
 
 export const useBackgroundRemoval = () => {
