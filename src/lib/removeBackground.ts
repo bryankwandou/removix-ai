@@ -28,7 +28,7 @@ async function processLocally(
   // and has the correct resources.json format. Local @imgly/background-removal-data
   // v1.4.5 is incompatible with library v1.7.0 (different key format in resources.json).
   const config: Config = {
-    model: 'medium',
+    model: 'isnet_fp16',
     output: { format: 'image/png', quality: 1 },
     progress: (key: string, current: number, total: number) => {
       const frac = total > 0 ? current / total : 0;
