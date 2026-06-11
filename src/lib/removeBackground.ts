@@ -9,7 +9,7 @@ export const processImage = async (
     throw new Error('Background removal must run in the browser');
   }
 
-  // Try local browser AI first — private, fast, free
+  // Try local browser AI first — private, fast, no external CDN dependency
   try {
     return await processLocally(imageBlob, onProgress);
   } catch (localErr) {
@@ -18,16 +18,36 @@ export const processImage = async (
   }
 };
 
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < maxAttempts - 1) {
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 async function processLocally(
   imageBlob: Blob,
   onProgress: (pct: number, stage: string) => void
 ): Promise<Blob> {
   const { removeBackground } = await import('@imgly/background-removal');
 
-  // Use the library's built-in CDN (staticimgly.com) which is version-matched
-  // and has the correct resources.json format. Local @imgly/background-removal-data
-  // v1.4.5 is incompatible with library v1.7.0 (different key format in resources.json).
+  // Serve all model files from our own Vercel deployment — no external CDN dependency.
+  // resources.json at /models/resources.json uses v1.7.0-compatible format:
+  //   - model keys: "isnet_fp16", "isnet_quint8"
+  //   - chunk field: "name" (not "hash")
+  //   - WASM/MJS from onnxruntime-web bundled at build time
+  const publicPath = `${window.location.origin}/models/`;
+
   const config: Config = {
+    publicPath,
     model: 'isnet_fp16',
     output: { format: 'image/png', quality: 1 },
     progress: (key: string, current: number, total: number) => {
@@ -41,7 +61,7 @@ async function processLocally(
   };
 
   onProgress(5, 'Initializing AI model...');
-  const result = await removeBackground(imageBlob, config);
+  const result = await withRetry(() => removeBackground(imageBlob, config));
   onProgress(100, 'Done!');
   return result;
 }
