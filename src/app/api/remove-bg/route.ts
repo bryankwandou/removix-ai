@@ -126,7 +126,7 @@ async function removeViaGroq(imageBuffer: Buffer): Promise<Buffer> {
   const { choices } = await groqRes.json() as { choices: { message: { content: string } }[] };
   const content = choices?.[0]?.message?.content ?? '{}';
 
-  let bbox = { x1: 0.1, y1: 0.05, x2: 0.9, y2: 0.95 };
+  const bbox = { x1: 0.1, y1: 0.05, x2: 0.9, y2: 0.95 };
   try {
     const match = content.match(/\{[^}]+\}/);
     if (match) Object.assign(bbox, JSON.parse(match[0]));

@@ -46,7 +46,7 @@ const UploadZone: React.FC<UploadZoneProps> = ({ onFileSelect, onFilesSelect, er
           <button
             type="button"
             className="rmx-error-retry"
-            onClick={(e) => { e.stopPropagation(); onReset ? onReset() : inputRef.current?.click(); }}
+            onClick={(e) => { e.stopPropagation(); if (onReset) { onReset(); } else { inputRef.current?.click(); } }}
           >
             Try again
           </button>
