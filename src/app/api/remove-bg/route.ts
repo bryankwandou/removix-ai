@@ -30,34 +30,47 @@ async function retryFetch(
   return res;
 }
 
-// ─── Provider 1: HuggingFace briaai/RMBG-1.4 ─────────────────────────────────
-async function removeViaHuggingFace(imageBuffer: Buffer): Promise<Buffer> {
-  const HF_API = 'https://api-inference.huggingface.co/models/briaai/RMBG-1.4';
-  const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream', Accept: 'application/json' };
+// ─── RMBG unified provider (RMBG-2.0 primary, RMBG-1.4 fallback) ─────────────
+// RMBG models return an RGBA PNG with background made transparent — NOT a greyscale mask.
+// We extract the alpha channel so applyMask receives a proper single-channel mask.
+async function removeViaRMBG(imageBuffer: Buffer, modelId: string): Promise<Buffer> {
+  const HF_API = `https://api-inference.huggingface.co/models/${modelId}`;
+  const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream' };
   if (process.env.HUGGINGFACE_API_KEY) headers['Authorization'] = `Bearer ${process.env.HUGGINGFACE_API_KEY}`;
 
   const res = await retryFetch(
-    () => fetchWithTimeout(HF_API, { method: 'POST', headers, body: new Uint8Array(imageBuffer) }, 45_000),
+    () => fetchWithTimeout(HF_API, { method: 'POST', headers, body: new Uint8Array(imageBuffer) }, 50_000),
   );
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`HuggingFace ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(`HuggingFace ${modelId} ${res.status}: ${text.slice(0, 200)}`);
   }
 
   const ct = res.headers.get('content-type') ?? '';
+
+  // JSON response: image-segmentation format with base64 binary mask (white=foreground)
   if (ct.includes('application/json')) {
     const segs = (await res.json()) as { label: string; score: number; mask: string }[];
-    if (!Array.isArray(segs) || !segs.length) throw new Error('HuggingFace returned empty segments');
-    const best = segs.reduce((a, b) => (b.score > a.score ? b : a));
-    if (!best.mask) throw new Error('HuggingFace segment missing mask');
-    return Buffer.from(best.mask, 'base64');
+    if (!Array.isArray(segs) || !segs.length) throw new Error(`${modelId}: empty segments`);
+    const fg = segs.find(s => s.label === 'foreground') ?? segs.reduce((a, b) => b.score > a.score ? b : a);
+    if (!fg.mask) throw new Error(`${modelId}: missing mask`);
+    return Buffer.from(fg.mask, 'base64');
   }
-  // Raw image mask returned directly
-  return Buffer.from(await res.arrayBuffer());
+
+  // Binary response: RMBG returns the composited RGBA PNG (background already transparent).
+  // We must extract the alpha channel — NOT convert to greyscale (which would use RGB luminance
+  // and incorrectly keep white backgrounds opaque).
+  const buf = Buffer.from(await res.arrayBuffer());
+  const { hasAlpha } = await sharp(buf).metadata();
+  if (hasAlpha) {
+    return sharp(buf).extractChannel('alpha').png().toBuffer();
+  }
+  // Rare case: model returned a greyscale/RGB mask — use as-is
+  return buf;
 }
 
-// ─── Provider 2: HuggingFace Xenova/modnet (backup model) ────────────────────
+// ─── Provider 3: HuggingFace Xenova/modnet (portrait matting fallback) ───────
 async function removeViaModNet(imageBuffer: Buffer): Promise<Buffer> {
   const HF_API = 'https://api-inference.huggingface.co/models/Xenova/modnet';
   const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream' };
@@ -67,7 +80,12 @@ async function removeViaModNet(imageBuffer: Buffer): Promise<Buffer> {
     () => fetchWithTimeout(HF_API, { method: 'POST', headers, body: new Uint8Array(imageBuffer) }, 40_000),
   );
   if (!res.ok) throw new Error(`ModNet ${res.status}`);
-  return Buffer.from(await res.arrayBuffer());
+  const buf = Buffer.from(await res.arrayBuffer());
+  const { hasAlpha } = await sharp(buf).metadata();
+  if (hasAlpha) {
+    return sharp(buf).extractChannel('alpha').png().toBuffer();
+  }
+  return buf;
 }
 
 // ─── Provider 3: Groq llama-3.2-11b-vision — smart subject-crop fallback ──────
@@ -203,11 +221,12 @@ export async function POST(req: NextRequest) {
       .jpeg({ quality: 90 })
       .toBuffer();
 
-    // Three-tier provider chain — each falls through to the next on failure
+    // Four-tier provider chain — each falls through to the next on failure
     const providers: Array<[string, () => Promise<Buffer>]> = [
-      ['HuggingFace RMBG-1.4',  () => removeViaHuggingFace(imageBuffer)],
-      ['HuggingFace ModNet',    () => removeViaModNet(imageBuffer)],
-      ['Groq vision fallback',  () => removeViaGroq(raw)],
+      ['RMBG-2.0',   () => removeViaRMBG(imageBuffer, 'briaai/RMBG-2.0')],
+      ['RMBG-1.4',   () => removeViaRMBG(imageBuffer, 'briaai/RMBG-1.4')],
+      ['ModNet',     () => removeViaModNet(imageBuffer)],
+      ['Groq',       () => removeViaGroq(raw)],
     ];
 
     let maskBuffer: Buffer | null = null;

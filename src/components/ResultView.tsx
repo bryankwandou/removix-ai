@@ -176,7 +176,7 @@ export default function ResultView({
 
       {/* Background picker */}
       {mode === 'background' && (
-        <BackgroundPicker resultURL={result} onComposite={handleBgComposite} />
+        <BackgroundPicker resultURL={activeURL} onComposite={handleBgComposite} />
       )}
 
       {/* Comparison slider */}
