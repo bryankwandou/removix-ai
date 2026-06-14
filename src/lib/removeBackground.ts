@@ -51,14 +51,14 @@ async function processLocally(
   try {
     onProgress(3, 'Initializing AI model (self-hosted)…');
     const selfHosted = `${window.location.origin}/models/`;
-    return await withTimeout(removeBackground(imageBlob, makeConfig(selfHosted)), 90_000);
+    return await withTimeout(removeBackground(imageBlob, makeConfig(selfHosted)), 300_000);
   } catch (e1) {
     console.warn('[Removix] Self-hosted model failed, trying original CDN:', e1);
   }
 
   // Stage 2: original staticimgly.com CDN (same source the app used before our changes)
   onProgress(3, 'Loading AI model (CDN)…');
-  return await withTimeout(removeBackground(imageBlob, makeConfig()), 120_000);
+  return await withTimeout(removeBackground(imageBlob, makeConfig()), 300_000);
 }
 
 // ─── Server fallback (RMBG-2.0 → RMBG-1.4 → ModNet → Groq) ─────────────────
