@@ -16,15 +16,16 @@ async function fetchWithTimeout(url: string, init: RequestInit, ms: number): Pro
 
 async function retryFetch(
   doFetch: () => Promise<Response>,
-  retryOn503 = 4,
+  retryOn503 = 1,
 ): Promise<Response> {
   let res = await doFetch();
+  // One retry on 503 (model cold-start), short wait to stay inside Vercel's 60s limit
   for (let i = 0; i < retryOn503 && res.status === 503; i++) {
-    await new Promise(r => setTimeout(r, (i + 1) * 7_000));
+    await new Promise(r => setTimeout(r, 3_000));
     res = await doFetch();
   }
   if (res.status === 429) {
-    await new Promise(r => setTimeout(r, 12_000));
+    await new Promise(r => setTimeout(r, 4_000));
     res = await doFetch();
   }
   return res;
@@ -39,7 +40,7 @@ async function removeViaRMBG(imageBuffer: Buffer, modelId: string): Promise<Buff
   if (process.env.HUGGINGFACE_API_KEY) headers['Authorization'] = `Bearer ${process.env.HUGGINGFACE_API_KEY}`;
 
   const res = await retryFetch(
-    () => fetchWithTimeout(HF_API, { method: 'POST', headers, body: new Uint8Array(imageBuffer) }, 50_000),
+    () => fetchWithTimeout(HF_API, { method: 'POST', headers, body: new Uint8Array(imageBuffer) }, 18_000),
   );
 
   if (!res.ok) {
@@ -77,7 +78,7 @@ async function removeViaModNet(imageBuffer: Buffer): Promise<Buffer> {
   if (process.env.HUGGINGFACE_API_KEY) headers['Authorization'] = `Bearer ${process.env.HUGGINGFACE_API_KEY}`;
 
   const res = await retryFetch(
-    () => fetchWithTimeout(HF_API, { method: 'POST', headers, body: new Uint8Array(imageBuffer) }, 40_000),
+    () => fetchWithTimeout(HF_API, { method: 'POST', headers, body: new Uint8Array(imageBuffer) }, 18_000),
   );
   if (!res.ok) throw new Error(`ModNet ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
